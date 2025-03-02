@@ -17,4 +17,4 @@ Scengine is a **fast, extensible, and declarative** web scraping engine designed
 ```sh
 npm install scengine
 ```
-[View Test Script](https://github.com/babymonie/scengine/blob/mains/scripts/test.se)
+[View Test Script](https://github.com/babymonie/scengine/blob/main/scripts/test.se)
