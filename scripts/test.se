@@ -1,0 +1,9 @@
+http://quotes.toscrape.com | engine=axios | paginationNext=.next a | paginationLimit=2 {
+  !..col-md-8 > div..quote = quotes
+  quote:{
+    !..quote = item
+    item > span..text = text | trim | regex("^“(.*)”$", "1")  # Extracts quote text
+    item > small..author = author | trim | customJS("return value;")  # Ensures correct author extraction
+    item > div..tags > a.tag = tags | trim  # Extracts tags
+  }
+}
