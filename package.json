@@ -7,9 +7,13 @@
         "test": "node test.js"
     },
     "repository": {
-        "type": "git",
-        "url": "https://github.com/YOUR-USERNAME/scengine.git"
-    },
+    "type": "git",
+    "url": "https://github.com/babymonie/scengine.git"
+  },
+  "bugs": {
+    "url": "https://github.com/babymonie/scengine/issues"
+  },
+  "homepage": "https://github.com/babymonie/scengine#readme",
     "keywords": [
         "scraping",
         "web scraping",
