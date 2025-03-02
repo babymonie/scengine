@@ -1,0 +1,38 @@
+{
+    "name": "scengine",
+    "version": "1.0.0",
+    "description": "Scengine—a declarative, extensible, and performance-optimized scraping engine",
+    "main": "dist/scengine.bundle.js",
+    "scripts": {
+        "test": "node test.js"
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/YOUR-USERNAME/scengine.git"
+    },
+    "keywords": [
+        "scraping",
+        "web scraping",
+        "automation",
+        "puppeteer",
+        "cheerio"
+    ],
+    "author": "thatfriendlyasiandev",
+    "license": "MIT",
+    "dependencies": {
+        "axios": "^1.8.1",
+        "babel-loader": "^10.0.0",
+        "cheerio": "^1.0.0",
+        "puppeteer": "^24.0.0"
+    },
+    "devDependencies": {
+        "assert": "^2.1.0",
+        "os-browserify": "^0.3.0",
+        "path-browserify": "^1.0.1",
+        "stream-browserify": "^3.0.0",
+        "typescript": "^5.8.2",
+        "util": "^0.12.5",
+        "webpack": "^5.98.0",
+        "webpack-cli": "^6.0.1"
+    }
+}
