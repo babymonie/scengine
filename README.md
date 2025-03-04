@@ -1,4 +1,8 @@
 # Scengine - The Declarative Web Scraping Engine 🚀
+[![npm version](https://img.shields.io/npm/v/scengine.svg)](https://www.npmjs.com/package/scengine)
+[![npm downloads](https://img.shields.io/npm/dt/scengine.svg)](https://www.npmjs.com/package/scengine)
+
+[![License](https://img.shields.io/npm/l/scengine.svg)](https://github.com/babymonie/scengine/blob/main/LICENSE)
 
 Scengine is a **fast, extensible, and declarative** web scraping engine designed to simplify data extraction.
 
@@ -12,3 +16,5 @@ Scengine is a **fast, extensible, and declarative** web scraping engine designed
 ## 📦 Installation
 ```sh
 npm install scengine
+```
+[View Test Script](https://github.com/babymonie/scengine/blob/main/scripts/test.se)
