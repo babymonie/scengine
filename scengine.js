@@ -2,39 +2,45 @@ const axios = require("axios");
 const fs = require("fs");
 const cheerio = require("cheerio");
 const { URL } = require("url");
-
-// Simple in-memory cache to prevent excessive requests.
-// No logs are produced here except for final results.
+const crypto = require("crypto"); // For hashing the script
 const requestCache = new Map();
-const DEFAULT_TTL = 1000 * 60 * 5; // 5 minutes in milliseconds
+const DEFAULT_TTL = 1000 * 60 * 5; // 5 minutes
 
-function getCached(url) {
-  const entry = requestCache.get(url);
+function getScriptHash(scriptContent) {
+  return crypto.createHash("md5").update(scriptContent).digest("hex");
+}
+
+function getCacheKey(url, scriptHash) {
+  return `${url}::${scriptHash}`;
+}
+
+function getCached(cacheKey) {
+  const entry = requestCache.get(cacheKey);
   if (!entry) return null;
   if (Date.now() > entry.expireAt) {
-    requestCache.delete(url);
+    requestCache.delete(cacheKey);
     return null;
   }
   return entry.data;
 }
 
-function setCached(url, data, ttl = DEFAULT_TTL) {
-  requestCache.set(url, {
+function setCached(cacheKey, data, ttl = DEFAULT_TTL) {
+  requestCache.set(cacheKey, {
     data,
-    expireAt: Date.now() + ttl
+    expireAt: Date.now() + ttl,
   });
 }
 
-async function fetchWithCache(url, axiosConfig = {}, ttl = DEFAULT_TTL) {
-  const cached = getCached(url);
+async function fetchWithCache(url, scriptHash, axiosConfig = {}, ttl = DEFAULT_TTL) {
+  const cacheKey = getCacheKey(url, scriptHash);
+  const cached = getCached(cacheKey);
   if (cached) {
     return cached;
   }
   const response = await axios.get(url, axiosConfig);
-  setCached(url, response.data, ttl);
+  setCached(cacheKey, response.data, ttl);
   return response.data;
 }
-
 const transformFunctions = {
   trim: (val, $) => (typeof val === "string" ? val.trim() : val),
   toLowerCase: (val, $) => (typeof val === "string" ? val.toLowerCase() : val),
@@ -424,79 +430,56 @@ function registerPlugin(plugin) {
   }
 }
 
-async function scrape(script, props = {}) {
-  let { url, config, instructions } = parseScript(script);
+async function scrape(scriptContent, props = {}) {
+  let scriptHash = getScriptHash(scriptContent);
+  let { url, config, instructions } = parseScript(scriptContent);
+
   url = url.replace(/\[(\w+)\]/g, (match, prop) => {
     if (props[prop] !== undefined) {
       return encodeURIComponent(props[prop]);
     }
     return "";
   });
+
   let combinedResults = {};
-  let $;
 
   let processPage = async (htmlContent) => {
     const local$ = cheerio.load(htmlContent);
     let context = {};
     await executeInstructions(instructions, context, local$, null);
-    let result = {};
-    for (let key in context) {
-      if (key === "_excluded") continue;
-      if (context._excluded && context._excluded[key]) continue;
-      result[key] = context[key];
-    }
-    return cleanResult(result, local$);
+    return cleanResult(context, local$);
   };
 
-  if (config.engine && engines[config.engine]) {
-    return engines[config.engine](url, config, processPage, mergeResults);
-  } else if (config.engine && config.engine.toLowerCase() === "puppeteer") {
-    const puppeteer = require("puppeteer");
+  if (config.engine && config.engine.toLowerCase() === "puppeteer") {
     let browser;
     try {
-      // Puppeteer requests won't utilize the simple in-memory caching above.
-      // You could implement further caching for Puppeteer if desired.
       browser = await puppeteer.launch();
       const page = await browser.newPage();
       await page.goto(url, { waitUntil: "networkidle2" });
-      if (config.paginationType && config.paginationType.toLowerCase() === "scroll") {
+
+      if (config.paginationType?.toLowerCase() === "scroll") {
         let pageResults = [];
         const limit = config.paginationLimit ? parseInt(config.paginationLimit) : 5;
-        let html = await page.content();
-        pageResults.push(await processPage(html));
-        for (let i = 1; i < limit; i++) {
+        for (let i = 0; i < limit; i++) {
           await page.evaluate(() => window.scrollBy(0, window.innerHeight));
           await page.waitForTimeout(1000);
-          html = await page.content();
+          let html = await page.content();
           pageResults.push(await processPage(html));
         }
         combinedResults = mergeResults(pageResults);
       } else {
-        let html = await page.content();
-        $ = cheerio.load(html);
-        combinedResults = await processPage(html);
+        combinedResults = await processPage(await page.content());
         if (config.paginationNext) {
           let pageCount = 1;
           const limit = config.paginationLimit ? parseInt(config.paginationLimit) : 5;
           const nextSelector = config.paginationNext;
           while (pageCount < limit) {
-            const nextPageElement = $(nextSelector).first();
-            if (!nextPageElement || !nextPageElement.attr("href")) break;
-            let nextUrl = nextPageElement.attr("href");
-            if (!nextUrl.startsWith("http")) {
-              nextUrl = new URL(nextUrl, url).toString();
-            }
+            const nextPageElement = await page.$(nextSelector);
+            if (!nextPageElement) break;
+            let nextUrl = await page.evaluate((el) => el.href, nextPageElement);
             await page.goto(nextUrl, { waitUntil: "networkidle2" });
-            html = await page.content();
-            $ = cheerio.load(html);
-            const pageResult = await processPage(html);
-            for (let key in pageResult) {
-              if (combinedResults[key]) {
-                combinedResults[key] = combinedResults[key].concat(pageResult[key]);
-              } else {
-                combinedResults[key] = pageResult[key];
-              }
-            }
+            const pageResult = await processPage(await page.content());
+            combinedResults = mergeResults([combinedResults, pageResult]);
             pageCount++;
           }
         }
@@ -506,30 +489,25 @@ async function scrape(script, props = {}) {
     }
     return { result: combinedResults, config };
   } else {
-    // Use fetchWithCache for standard HTTP requests
-    let data = await fetchWithCache(url);
+    let data = await fetchWithCache(url, scriptHash);
     combinedResults = await processPage(data);
-    $ = cheerio.load(data);
+    let $ = cheerio.load(data);
 
     if (config.paginationAjax) {
       const limit = config.paginationLimit ? parseInt(config.paginationLimit) : 5;
       let ajaxResults = [];
       const concurrency = config.concurrency ? parseInt(config.concurrency) : 1;
+
       if (concurrency > 1) {
-        let ajaxPromises = [];
-        for (let pageNum = 1; pageNum <= limit; pageNum++) {
-          let ajaxUrl = config.paginationAjax.replace("{page}", pageNum);
-          ajaxPromises.push(fetchWithCache(ajaxUrl).then((resp) => resp));
-        }
+        let ajaxPromises = Array.from({ length: limit }, (_, i) =>
+          fetchWithCache(config.paginationAjax.replace("{page}", i + 1), scriptHash)
+        );
         let pagesHtml = await Promise.all(ajaxPromises);
-        for (const html of pagesHtml) {
-          ajaxResults.push(await processPage(html));
-        }
+        ajaxResults = await Promise.all(pagesHtml.map(processPage));
       } else {
-        for (let pageNum = 1; pageNum <= limit; pageNum++) {
-          let ajaxUrl = config.paginationAjax.replace("{page}", pageNum);
-          let resp = await fetchWithCache(ajaxUrl);
-          ajaxResults.push(await processPage(resp));
+        for (let i = 1; i <= limit; i++) {
+          let pageData = await fetchWithCache(config.paginationAjax.replace("{page}", i), scriptHash);
+          ajaxResults.push(await processPage(pageData));
         }
       }
       combinedResults = mergeResults(ajaxResults);
@@ -537,28 +515,14 @@ async function scrape(script, props = {}) {
       let pageCount = 1;
       const limit = config.paginationLimit ? parseInt(config.paginationLimit) : 5;
       const nextSelector = config.paginationNext;
+
       while (pageCount < limit) {
         const nextPageElement = $(nextSelector).first();
         if (!nextPageElement || !nextPageElement.attr("href")) break;
-        let nextUrl = nextPageElement.attr("href");
-        if (!nextUrl.startsWith("http")) {
-          nextUrl = new URL(nextUrl, url).toString();
-        }
-        let nextResp;
-        try {
-          nextResp = await fetchWithCache(nextUrl);
-        } catch {
-          break;
-        }
-        $ = cheerio.load(nextResp);
-        const pageResult = await processPage(nextResp);
-        for (let key in pageResult) {
-          if (combinedResults[key]) {
-            combinedResults[key] = combinedResults[key].concat(pageResult[key]);
-          } else {
-            combinedResults[key] = pageResult[key];
-          }
-        }
+        let nextUrl = new URL(nextPageElement.attr("href"), url).toString();
+        let nextData = await fetchWithCache(nextUrl, scriptHash);
+        const pageResult = await processPage(nextData);
+        combinedResults = mergeResults([combinedResults, pageResult]);
         pageCount++;
       }
     }

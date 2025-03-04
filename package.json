@@ -1,6 +1,6 @@
 {
   "name": "scengine",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Scengine—a declarative, extensible, and performance-optimized scraping engine",
   "main": "dist/scengine.cjs",
   "module": "dist/scengine.mjs",
