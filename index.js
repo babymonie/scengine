@@ -540,6 +540,11 @@ module.exports = {
 };
 
 if (require.main === module) {
+  if (process.argv.length < 3) {
+    console.error("Usage: node index.js <script_file> [prop1=val1 prop2=val2 ...]");
+    process.exit(1);
+  }
+  
   const script = fs.readFileSync(process.argv[2], "utf8");
   let props = {};
   if (process.argv.length > 3) {
