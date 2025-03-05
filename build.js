@@ -1,7 +1,7 @@
 const esbuild = require("esbuild");
 
 const options = {
-  entryPoints: ["scengine.js"], // Change this to your entry file
+  entryPoints: ["index.js"], // Change this to your entry file
   minify: true,
   bundle: true,
   sourcemap: true,
@@ -14,14 +14,14 @@ async function build() {
   await esbuild.build({
     ...options,
     format: "cjs",
-    outfile: "dist/index.cjs",
+    outfile: "dist/scengine.cjs",
   });
 
   // ESM Build
   await esbuild.build({
     ...options,
     format: "esm",
-    outfile: "dist/index.mjs",
+    outfile: "dist/scengine.mjs",
   });
 
   console.log("Build complete!");
