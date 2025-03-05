@@ -5,7 +5,6 @@ const options = {
   minify: true,
   bundle: true,
   sourcemap: true,
-  external: ["fs", "path", "axios", "cheerio"], // Externalize Node.js built-ins and dependencies,
   platform: 'node',
 };
 
