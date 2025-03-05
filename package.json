@@ -12,6 +12,7 @@
     "build": "node scripts/build.js",
     "test": "node test.js"
   },
+  "bin": "dist/scengine.cjs",
   "repository": {
     "type": "git",
     "url": "https://github.com/babymonie/scengine.git"
