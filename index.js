@@ -3,11 +3,12 @@ const fs = require("fs");
 const cheerio = require("cheerio");
 const { URL } = require("url");
 const puppeteer = require("puppeteer");
-const { LRUCache } = require('lru-cache')
-const crypto = require("crypto"); // For hashing the script
-const DEFAULT_TTL = 1000 * 60 * 5; // 5 minutes
+const { LRUCache } = require("lru-cache");
+const crypto = require("crypto");
+
+const DEFAULT_TTL = 1000 * 60 * 5;
 const requestCache = new LRUCache({
-  max: 100, // Adjust based on memory constraints
+  max: 100,
   ttl: DEFAULT_TTL,
 });
 const regexCache = new Map();
@@ -20,7 +21,6 @@ function setCached(cacheKey, data, ttl = DEFAULT_TTL) {
   requestCache.set(cacheKey, data, { ttl });
 }
 
-
 function getScriptHash(scriptContent) {
   return crypto.createHash("md5").update(scriptContent).digest("hex");
 }
@@ -28,7 +28,6 @@ function getScriptHash(scriptContent) {
 function getCacheKey(url, scriptHash) {
   return `${url}::${scriptHash}`;
 }
-
 
 async function fetchWithCache(url, scriptHash, axiosConfig = {}, ttl = DEFAULT_TTL) {
   const cacheKey = getCacheKey(url, scriptHash);
@@ -40,6 +39,7 @@ async function fetchWithCache(url, scriptHash, axiosConfig = {}, ttl = DEFAULT_T
   setCached(cacheKey, response.data, ttl);
   return response.data;
 }
+
 const transformFunctions = {
   trim: (val, $) => (typeof val === "string" ? val.trim() : val),
   toLowerCase: (val, $) => (typeof val === "string" ? val.toLowerCase() : val),
@@ -69,7 +69,7 @@ const transformFunctions = {
   },
   regexReplace: (val, $, pattern, replacement) => {
     if (typeof val !== "string") return val;
-    pattern = pattern.replace(/\\\\/g, '\\');
+    pattern = pattern.replace(/\\\\/g, "\\");
     let re = regexCache.get(pattern);
     if (!re) {
       re = new RegExp(pattern);
@@ -88,6 +88,7 @@ function cleanResult(value, $) {
     }
     let newObj = {};
     for (let key in value) {
+      if (key === "_excluded") continue;
       newObj[key] = cleanResult(value[key], $);
     }
     return newObj;
@@ -142,7 +143,6 @@ function parseInstructions(text) {
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line && !line.startsWith("//"));
-
   const instructions = [];
   let i = 0;
   while (i < lines.length) {
@@ -200,6 +200,7 @@ function parseInstructions(text) {
         const tokens = assignPart.split("|").map((s) => s.trim());
         assignVar = tokens[0];
         transforms = tokens.slice(1).map((token) => {
+          token = token.replace(/,\s*$/, "");
           const m = token.match(/^(\w+)(?:\((.*)\))?$/);
           if (m) {
             return {
@@ -407,14 +408,9 @@ async function executeInstructions(instructions, context, $, baseElements) {
 
 function mergeResults(resultsArray) {
   let merged = {};
-  
   for (const result of resultsArray) {
     for (const key in result) {
       if (key === "_excluded") {
-        if (!merged["_excluded"]) {
-          merged["_excluded"] = {};
-        }
-        Object.assign(merged["_excluded"], result["_excluded"]);
         continue;
       }
       if (Array.isArray(result[key])) {
@@ -423,7 +419,6 @@ function mergeResults(resultsArray) {
         }
         merged[key] = merged[key].concat(result[key]);
       } else {
-       
         if (!merged[key]) {
           merged[key] = [];
         }
@@ -431,6 +426,7 @@ function mergeResults(resultsArray) {
       }
     }
   }
+  delete merged._excluded;
   return merged;
 }
 
@@ -451,30 +447,25 @@ function registerPlugin(plugin) {
 async function scrape(scriptContent, props = {}) {
   let scriptHash = getScriptHash(scriptContent);
   let { url, config, instructions } = parseScript(scriptContent);
-
   url = url.replace(/\[(\w+)\]/g, (match, prop) => {
     if (props[prop] !== undefined) {
       return encodeURIComponent(props[prop]);
     }
     return "";
   });
-
   let combinedResults = {};
-
   let processPage = async (htmlContent) => {
     const local$ = cheerio.load(htmlContent);
     let context = {};
     await executeInstructions(instructions, context, local$, null);
     return cleanResult(context, local$);
   };
-
   if (config.engine && config.engine.toLowerCase() === "puppeteer") {
     let browser;
     try {
       browser = await puppeteer.launch();
       const page = await browser.newPage();
       await page.goto(url, { waitUntil: "networkidle2" });
-
       if (config.paginationType?.toLowerCase() === "scroll") {
         let pageResults = [];
         const limit = config.paginationLimit ? parseInt(config.paginationLimit) : 5;
@@ -510,12 +501,10 @@ async function scrape(scriptContent, props = {}) {
     let data = await fetchWithCache(url, scriptHash);
     combinedResults = await processPage(data);
     let $ = cheerio.load(data);
-
     if (config.paginationAjax) {
       const limit = config.paginationLimit ? parseInt(config.paginationLimit) : 5;
       let ajaxResults = [];
       const concurrency = config.concurrency ? parseInt(config.concurrency) : 1;
-
       if (concurrency > 1) {
         let ajaxPromises = Array.from({ length: limit }, (_, i) =>
           fetchWithCache(config.paginationAjax.replace("{page}", i + 1), scriptHash)
@@ -533,7 +522,6 @@ async function scrape(scriptContent, props = {}) {
       let pageCount = 1;
       const limit = config.paginationLimit ? parseInt(config.paginationLimit) : 5;
       const nextSelector = config.paginationNext;
-
       while (pageCount < limit) {
         const nextPageElement = $(nextSelector).first();
         if (!nextPageElement || !nextPageElement.attr("href")) break;
@@ -562,7 +550,6 @@ if (require.main === module) {
     console.error("Usage: node index.js <script_file> [prop1=val1 prop2=val2 ...]");
     process.exit(1);
   }
-  
   const script = fs.readFileSync(process.argv[2], "utf8");
   let props = {};
   if (process.argv.length > 3) {
@@ -573,11 +560,9 @@ if (require.main === module) {
   }
   scrape(script, props)
     .then((result) => {
-      // Only final results are printed.
       console.log(JSON.stringify(result, null, 2));
     })
     .catch((err) => {
-      // If something goes wrong, it's shown here.
       console.error(err);
     });
 }
