@@ -1,6 +1,6 @@
 {
   "name": "scengine",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "Scengine—a declarative, extensible, and performance-optimized scraping engine",
   "main": "dist/scengine.cjs",
   "module": "dist/scengine.mjs",
@@ -33,6 +33,7 @@
   "dependencies": {
     "axios": "^1.8.1",
     "cheerio": "^1.0.0",
+    "lru-cache": "^11.0.2",
     "puppeteer": "^24.0.0"
   },
   "devDependencies": {

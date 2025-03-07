@@ -6,7 +6,8 @@ const commonConfig = {
   sourcemap: true,
   platform: 'node',
   target: 'node16',
-  external: ['axios', 'cheerio', 'puppeteer', 'fs', 'crypto', 'url']
+  minify: true,
+  external: ['axios', 'cheerio', 'puppeteer', 'fs', 'crypto', 'url',"path"],
 };
 
 Promise.all([

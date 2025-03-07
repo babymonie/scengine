@@ -2,9 +2,24 @@ const axios = require("axios");
 const fs = require("fs");
 const cheerio = require("cheerio");
 const { URL } = require("url");
+const puppeteer = require("puppeteer");
+const { LRUCache } = require('lru-cache')
 const crypto = require("crypto"); // For hashing the script
-const requestCache = new Map();
 const DEFAULT_TTL = 1000 * 60 * 5; // 5 minutes
+const requestCache = new LRUCache({
+  max: 100, // Adjust based on memory constraints
+  ttl: DEFAULT_TTL,
+});
+const regexCache = new Map();
+
+function getCached(cacheKey) {
+  return requestCache.get(cacheKey);
+}
+
+function setCached(cacheKey, data, ttl = DEFAULT_TTL) {
+  requestCache.set(cacheKey, data, { ttl });
+}
+
 
 function getScriptHash(scriptContent) {
   return crypto.createHash("md5").update(scriptContent).digest("hex");
@@ -14,22 +29,6 @@ function getCacheKey(url, scriptHash) {
   return `${url}::${scriptHash}`;
 }
 
-function getCached(cacheKey) {
-  const entry = requestCache.get(cacheKey);
-  if (!entry) return null;
-  if (Date.now() > entry.expireAt) {
-    requestCache.delete(cacheKey);
-    return null;
-  }
-  return entry.data;
-}
-
-function setCached(cacheKey, data, ttl = DEFAULT_TTL) {
-  requestCache.set(cacheKey, {
-    data,
-    expireAt: Date.now() + ttl,
-  });
-}
 
 async function fetchWithCache(url, scriptHash, axiosConfig = {}, ttl = DEFAULT_TTL) {
   const cacheKey = getCacheKey(url, scriptHash);
@@ -71,7 +70,11 @@ const transformFunctions = {
   regexReplace: (val, $, pattern, replacement) => {
     if (typeof val !== "string") return val;
     pattern = pattern.replace(/\\\\/g, '\\');
-    const re = new RegExp(pattern);
+    let re = regexCache.get(pattern);
+    if (!re) {
+      re = new RegExp(pattern);
+      regexCache.set(pattern, re);
+    }
     return val.replace(re, replacement);
   },
 };
@@ -404,12 +407,27 @@ async function executeInstructions(instructions, context, $, baseElements) {
 
 function mergeResults(resultsArray) {
   let merged = {};
+  
   for (const result of resultsArray) {
-    for (let key in result) {
-      if (merged[key]) {
+    for (const key in result) {
+      if (key === "_excluded") {
+        if (!merged["_excluded"]) {
+          merged["_excluded"] = {};
+        }
+        Object.assign(merged["_excluded"], result["_excluded"]);
+        continue;
+      }
+      if (Array.isArray(result[key])) {
+        if (!merged[key]) {
+          merged[key] = [];
+        }
         merged[key] = merged[key].concat(result[key]);
       } else {
-        merged[key] = result[key];
+       
+        if (!merged[key]) {
+          merged[key] = [];
+        }
+        merged[key].push(result[key]);
       }
     }
   }
